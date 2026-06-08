@@ -17,11 +17,11 @@ The dataset is a telecom customer churn prediction task (binary classification, 
 
 ### Key Results
 
-| Run | Training data | Val ROC-AUC |
-|-----|--------------|-------------|
-| 1   | Batch 1      | —           |
-| 2   | Batch 1 + 2  | —           |
-| 3   | Batch 1 + 2 + 3 | —        |
+| Run | Training data      | Val ROC-AUC |
+|-----|--------------------|-------------|
+| 1   | Batch 1            | 0.9156      |
+| 2   | Batch 1 + 2        | 0.9156      |
+| 3   | Batch 1 + 2 + 3    | 0.9163      |
 
 
 ## How It Works
@@ -34,23 +34,22 @@ Predict `Churn` probability for each customer in the test set. Evaluated by ROC-
 
 Training data is split into three sequential batches to simulate a real-world scenario where new customer data arrives over time. The pipeline is triggered once per batch:
 
-- **Run 1** — train on batch 1, log to MLflow, register as champion
+- **Run 1** — train on batch 1, log to MLflow, register as champion (no previous baseline)
 - **Run 2** — train on batch 1+2, compare AUC to Run 1, promote if better
 - **Run 3** — train on batch 1+2+3, compare AUC to Run 2, promote if better
 
-Each run is fully tracked in MLflow: parameters, metrics, and the serialized model artifact.
+Each run is fully tracked in MLflow: parameters, metrics, and the serialized model artifact. The next batch number is determined automatically by counting completed MLflow runs — no manual configuration needed between triggers.
 
 ### Pipeline Steps
 
 Each Airflow DAG run executes the following steps in order:
 
 1. **Ingest** — load the correct CSV batch for this run
-2. **Preprocess** — encode categoricals, handle nulls, train/validation split
-3. **Train** — fit LightGBM on the current batch
-4. **Track** — log parameters, metrics, and model artifact to MLflow
-5. **Evaluate** — compare validation AUC against the current champion
-6. **Promote** — register new model as champion if AUC improves
-7. **Serve** — FastAPI endpoint loads the champion model and exposes `/predict`
+2. **Preprocess** — encode categoricals, train/validation split
+3. **Train** — fit LightGBM on the current batch, log artifact to MLflow
+4. **Evaluate** — compare validation AUC against the current champion
+5. **Promote** — register new model as champion if AUC improves
+6. **Serve** — FastAPI endpoint loads the champion model and exposes `/predict`
 
 ## Dataset
 
@@ -62,9 +61,9 @@ Each Airflow DAG run executes the following steps in order:
 
 | Property | Value |
 |----------|-------|
-| Training rows | — |
-| Features | — |
-| Class balance (churn rate) | — |
+| Training rows | 594,194 |
+| Features | 19 (after dropping id and target) |
+| Class balance (churn rate) | 22.5% positive — mildly imbalanced, not handled explicitly |
 
 ## Project Structure
 
@@ -75,9 +74,9 @@ predict-customer-churn/
 │   └── churn_pipeline.py        # Airflow DAG — orchestrates all steps
 │
 ├── pipeline/
-│   ├── ingest.py                # Load batch CSV for current run
-│   ├── preprocess.py            # Encoding, null handling, train/val split
-│   ├── train.py                 # LightGBM training
+│   ├── ingest_data.py           # Load batch CSV for current run
+│   ├── preprocess.py            # Encoding, train/val split
+│   ├── train.py                 # LightGBM training + MLflow artifact logging
 │   └── evaluate.py              # Compare vs champion, promote if better
 │
 ├── serving/
@@ -91,19 +90,83 @@ predict-customer-churn/
 ├── notebooks/
 │   └── eda.ipynb                # Exploratory data analysis
 │
+├── create_batches.py            # One-off script to split raw data into batches
 ├── docker-compose.yml           # Runs Airflow, MLflow, and FastAPI together
 ├── requirements.txt
 ├── .gitignore
 └── README.md
 ```
 
-## Kaggle Submission
+## Running the Project
 
-The Run 3 model (trained on full data) is used to generate predictions on `test.csv` for Kaggle submission.
+### Prerequisites
 
-| Submission | Public leaderboard ROC-AUC |
-|------------|---------------------------|
-| Run 3 model | - |
+- Docker and Docker Compose installed
+- Kaggle dataset downloaded to `data/raw/train.csv`
+
+### Setup
+
+**1. Generate the batch files** (one-time, run from repo root):
+```bash
+python create_batches.py
+```
+
+**2. Start all services:**
+```bash
+docker-compose up -d
+```
+
+This starts four containers:
+- `mlflow-init` — sets permissions on the shared artifact volume (exits after)
+- `mlflow` — tracking server at `http://localhost:5000`
+- `airflow` — scheduler + webserver at `http://localhost:8080`
+- `serving` — FastAPI endpoint at `http://localhost:8000`
+
+Default Airflow credentials: `admin` / `admin`
+
+**3. Run the pipeline:**
+
+Trigger the `churn_pipeline` DAG from the Airflow UI (`http://localhost:8080`). Each trigger processes the next batch automatically. Trigger it three times to complete all runs.
+
+**4. Test the serving endpoint:**
+
+Navigate to `http://localhost:8000/docs` and use the `/predict` endpoint with a feature dictionary. Example request body:
+
+```json
+{
+  "features": {
+    "gender": "Male",
+    "SeniorCitizen": 0,
+    "Partner": "Yes",
+    "Dependents": "Yes",
+    "tenure": 29,
+    "PhoneService": "Yes",
+    "MultipleLines": "No",
+    "InternetService": "DSL",
+    "OnlineSecurity": "Yes",
+    "OnlineBackup": "No",
+    "DeviceProtection": "Yes",
+    "TechSupport": "Yes",
+    "StreamingTV": "No",
+    "StreamingMovies": "No",
+    "Contract": "One year",
+    "PaperlessBilling": "Yes",
+    "PaymentMethod": "Mailed check",
+    "MonthlyCharges": 60.1,
+    "TotalCharges": 1653.85
+  }
+}
+```
+
+**Note:** The serving container must be rebuilt after any changes to `app.py`:
+```bash
+docker-compose build serving && docker-compose up -d
+```
+
+### Resetting
+
+To rerun from scratch, delete all runs from the `churn_pipeline` experiment and the `champion` model from the Model Registry in the MLflow UI (`http://localhost:5000`), then retrigger the DAG.
+
 
 ## License
 

@@ -1,7 +1,7 @@
 import pandas as pd
 from pathlib import Path
 
-BATCHE_DIR = Path(__file__).parent.parent / "data" / "batches"
+BATCH_DIR = Path(__file__).parent.parent / "data" / "batches"
 
 def load_batch(batch_number: int) -> pd.DataFrame:
     """
@@ -17,8 +17,11 @@ def load_batch(batch_number: int) -> pd.DataFrame:
         raise ValueError(f"batch_number must be 1, 2 or 3. Got {batch_number}.")
     
     dfs = []
+
+    # Cumulative loading: batch 2 trains on batch 1+2, batch 3 on all three.
+    # Simulates a real retraining scenario where historical data is retained.
     for i in range(1, batch_number+1):
-        path = BATCHE_DIR / f"batch_{i}.csv"
+        path = BATCH_DIR / f"batch_{i}.csv"
         dfs.append(pd.read_csv(path))
     
     return pd.concat(dfs, ignore_index=True)

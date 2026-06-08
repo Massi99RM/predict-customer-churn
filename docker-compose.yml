@@ -1,0 +1,66 @@
+services:
+
+  # Runs once at startup to set write permissions on the shared artifact volume.
+  # Both MLflow and Airflow need read/write access to the same volume.
+  mlflow-init:
+    image: busybox
+    volumes:
+      - mlflow_data:/mlflow
+    command: chmod -R 777 /mlflow
+
+  mlflow:
+    # MLflow tracking server
+    image: ghcr.io/mlflow/mlflow:v2.17.2
+    ports:
+      - "5000:5000"
+    depends_on: 
+      - mlflow-init
+    volumes:
+      - mlflow_data:/mlflow
+    command: >
+      mlflow server
+      --backend-store-uri sqlite:///mlflow/mlflow.db
+      --default-artifact-root mlflow-artifacts:/
+      --serve-artifacts
+      --host 0.0.0.0
+      --port 5000
+
+  airflow:
+  # Airflow scheduler webserver
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    ports:
+      - "8080:8080"
+    depends_on: 
+      - mlflow-init
+    volumes:
+      - ./:/opt/airflow       # mounts the full project so pipeline/ is importable
+      - mlflow_data:/mlflow   # shared with MLflow for artifact read/write
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=SequentialExecutor
+      - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - MLFLOW_ARTIFACT_URI=mlflow-artifacts:/
+      - GIT_PYTHON_REFRESH=quiet 
+    command: airflow standalone
+
+  serving:
+    # FastAPI prediction endpoint
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    volumes:
+      - mlflow_data:/mlflow
+    build:
+      context: .
+      dockerfile: serving/Dockerfile
+    ports:
+      - "8000:8000"
+    depends_on: 
+      - mlflow
+    command: >
+      uvicorn app:app --host 0.0.0.0 --port 8000
+
+
+volumes:
+  mlflow_data:  # named volume shared across mlflow-init, mlflow, airflow, and serving

@@ -1,0 +1,8 @@
+FROM apache/airflow:2.8.1
+
+USER root
+# libgomp1 is required by LightGBM for OpenMP support (parallel tree building).
+RUN apt-get update && apt-get install -y libgomp1
+
+USER airflow
+RUN pip install scikit-learn lightgbm mlflow pandas

@@ -17,18 +17,24 @@ def evaluate(model: lgb.LGBMClassifier, X_val: pd.DataFrame, y_val: pd.Series) -
     Returns:
         val_auc: ROC-AUC score on validation set
     """
-    
     y_proba = model.predict_proba(X_val)[:, 1]
     val_auc = roc_auc_score(y_val, y_proba)
-
     mlflow.log_metric("val_auc", val_auc)
 
     client = mlflow.MlflowClient()
-    runs = client.search_runs(experiment_ids=["0"], order_by=["metrics.val_auc DESC"])
-    best_auc = runs[0].data.metrics["val_auc"] if runs else 0.0
-    
-    run_id = mlflow.active_run().info.run_id
-    if val_auc > best_auc: 
+    experiment = client.get_experiment_by_name("churn_pipeline")
+
+    # Fetch all finished runs sorted by AUC descending.
+    runs = client.search_runs(
+        experiment_ids=[experiment.experiment_id],
+        filter_string="attributes.status = 'FINISHED'",
+        order_by=["metrics.val_auc DESC"]
+    )
+    best_auc = runs[0].data.metrics.get("val_auc", 0.0) if runs else 0.0
+
+    # Promote this model if it matches or beats the current champion.
+    if val_auc >= best_auc:
+        run_id = mlflow.active_run().info.run_id
         mlflow.register_model(f"runs:/{run_id}/model", "champion")
 
     return val_auc

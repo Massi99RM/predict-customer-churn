@@ -8,6 +8,7 @@ app = FastAPI()
 
 
 class PredictRequest(BaseModel):
+    # Accepts any feature dictionary — keys must match the training feature names.
     features: dict
 
 
@@ -28,6 +29,11 @@ def predict(request: PredictRequest) -> dict:
     model = mlflow.lightgbm.load_model("models:/champion/latest")
     
     df = pd.DataFrame([request.features])
+
+    # Apply the same categorical encoding used during training in preprocess.py.
+    # pd.Categorical().codes maps each string category to a consistent integer.
+    for col in df.select_dtypes('object').columns:
+        df[col] = pd.Categorical(df[col]).codes
     churn_probability = model.predict_proba(df)[:, 1][0]
 
     return {"churn_probability": churn_probability}

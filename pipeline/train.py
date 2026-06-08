@@ -23,10 +23,12 @@ def train(X_train: pd.DataFrame, y_train: pd.Series) -> lgb.LGBMClassifier:
     }
 
     model = lgb.LGBMClassifier(**params)
-
-    with mlflow.start_run():
-        model.fit(X_train, y_train)
-        mlflow.log_params(params)
-        mlflow.lightgbm.log_model(model, "model")
+    model.fit(X_train, y_train)
+    mlflow.log_params(params)
+    
+    # Log the serialized model as an artifact so it can be registered
+    # in the MLflow Model Registry and loaded by the serving layer.
+    mlflow.lightgbm.log_model(model, "model")
+    
     
     return model
