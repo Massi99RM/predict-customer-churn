@@ -23,6 +23,12 @@ The dataset is a telecom customer churn prediction task (binary classification, 
 | 2   | Batch 1 + 2        | 0.9156      |
 | 3   | Batch 1 + 2 + 3    | 0.9163      |
 
+## Demo Videos
+
+### Complete Workflow
+Start all services → train model → run the pipeline → test the serving endpoint.
+
+[📹 Watch demo](https://github.com/Massi99RM/predict-customer-churn/releases/tag/demo1)
 
 ## How It Works
 
@@ -120,9 +126,11 @@ This starts four containers:
 - `mlflow-init` — sets permissions on the shared artifact volume (exits after)
 - `mlflow` — tracking server at `http://localhost:5000`
 - `airflow` — scheduler + webserver at `http://localhost:8080`
-- `serving` — FastAPI endpoint at `http://localhost:8000`
+- `serving` — FastAPI endpoint at `http://localhost:8000/docs`
 
-Default Airflow credentials: `admin` / `admin`
+Default Airflow credentials:
+-username: admin
+-password: on the auto-generated file standalone_admin_password.txt
 
 **3. Run the pipeline:**
 
